@@ -36,6 +36,7 @@
     let moodMonth = new Date();
     let editingHabitId = null;
     let selectedMood = null;
+    let selectedHabitDate = todayStr();
 
     // ===== Helpers =====
     function todayStr() {
@@ -52,6 +53,23 @@
     function parseDate(str) {
         const [y, m, d] = str.split('-').map(Number);
         return new Date(y, m - 1, d);
+    }
+
+    function dayOfWeekForDate(dateStr) {
+        return parseDate(dateStr).getDay();
+    }
+
+    function isHabitScheduledOnDate(habit, dateStr) {
+        if (habit.startDate > dateStr) return false;
+        if (habit.frequency === 'daily') return true;
+        if (habit.frequency === 'custom' && habit.days && habit.days.includes(dayOfWeekForDate(dateStr))) return true;
+        return false;
+    }
+
+    function clampToToday(dateStr) {
+        const today = todayStr();
+        if (!dateStr || dateStr > today) return today;
+        return dateStr;
     }
 
     function generateId() {
@@ -156,24 +174,30 @@
 
     function renderTodayHabits() {
         const container = document.getElementById('today-habits-list');
+        const dateInput = document.getElementById('habit-check-date');
+        const dateLabel = document.getElementById('habit-check-date-label');
         const today = todayStr();
-        const todayDate = new Date();
-        const dayOfWeek = todayDate.getDay();
 
-        const todayHabits = habits.filter(h => {
-            if (h.startDate > today) return false;
-            if (h.frequency === 'daily') return true;
-            if (h.frequency === 'custom' && h.days && h.days.includes(dayOfWeek)) return true;
-            return false;
-        });
+        selectedHabitDate = clampToToday(selectedHabitDate || today);
 
-        if (todayHabits.length === 0) {
-            container.innerHTML = '<p class="empty-state">No habits for today. Add some habits to get started!</p>';
+        if (dateInput) {
+            dateInput.max = today;
+            dateInput.value = selectedHabitDate;
+        }
+
+        if (dateLabel) {
+            dateLabel.textContent = friendlyDate(parseDate(selectedHabitDate));
+        }
+
+        const habitsForDate = habits.filter(h => isHabitScheduledOnDate(h, selectedHabitDate));
+
+        if (habitsForDate.length === 0) {
+            container.innerHTML = '<p class="empty-state">No habits scheduled for this date.</p>';
             return;
         }
 
-        container.innerHTML = todayHabits.map(h => {
-            const key = h.id + ':' + today;
+        container.innerHTML = habitsForDate.map(h => {
+            const key = h.id + ':' + selectedHabitDate;
             const done = !!completions[key];
             return `<div class="today-habit-item ${done ? 'done' : ''}" data-habit-id="${sanitize(h.id)}" style="border-left-color: ${sanitize(h.color || '#7c5cfc')}">
                 <div class="habit-check">${done ? '<i data-lucide="check"></i>' : ''}</div>
@@ -184,15 +208,31 @@
         container.querySelectorAll('.today-habit-item').forEach(item => {
             item.addEventListener('click', () => {
                 const hId = item.dataset.habitId;
-                const key = hId + ':' + today;
+                const key = hId + ':' + selectedHabitDate;
                 completions[key] = !completions[key];
                 if (!completions[key]) delete completions[key];
                 save();
                 renderDashboard();
+                renderCalendar();
             });
         });
 
         refreshIcons();
+    }
+
+    function initDashboardDateControls() {
+        const dateInput = document.getElementById('habit-check-date');
+        if (!dateInput) return;
+
+        selectedHabitDate = clampToToday(dateInput.value || todayStr());
+        dateInput.max = todayStr();
+        dateInput.value = selectedHabitDate;
+
+        dateInput.addEventListener('change', () => {
+            selectedHabitDate = clampToToday(dateInput.value);
+            dateInput.value = selectedHabitDate;
+            renderTodayHabits();
+        });
     }
 
     function renderVitality() {
@@ -205,15 +245,9 @@
             const d = new Date(todayDate);
             d.setDate(d.getDate() - i);
             const ds = formatDate(d);
-            const dayOfWeek = d.getDay();
             const weight = 7 - i;
 
-            const dayHabits = habits.filter(h => {
-                if (h.startDate > ds) return false;
-                if (h.frequency === 'daily') return true;
-                if (h.frequency === 'custom' && h.days && h.days.includes(dayOfWeek)) return true;
-                return false;
-            });
+            const dayHabits = habits.filter(h => isHabitScheduledOnDate(h, ds));
 
             if (dayHabits.length > 0) {
                 const done = dayHabits.filter(h => completions[h.id + ':' + ds]).length;
@@ -275,10 +309,7 @@
             for (let i = 0; i < 365; i++) {
                 const ds = formatDate(d);
                 if (ds < h.startDate) break;
-                const dayOfWeek = d.getDay();
-                let isScheduled = false;
-                if (h.frequency === 'daily') isScheduled = true;
-                if (h.frequency === 'custom' && h.days && h.days.includes(dayOfWeek)) isScheduled = true;
+                const isScheduled = isHabitScheduledOnDate(h, ds);
 
                 if (isScheduled) {
                     if (completions[h.id + ':' + ds]) {
@@ -484,16 +515,11 @@
         for (let d = 1; d <= totalDays; d++) {
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
             const dateObj = new Date(year, month, d);
-            const dayOfWeek = dateObj.getDay();
             const isToday = dateStr === todayD;
             const isBeforeStart = dateStr < habit.startDate;
             const isFuture = dateStr > todayD;
-
-            let scheduled = false;
-            if (!isBeforeStart) {
-                if (habit.frequency === 'daily') scheduled = true;
-                if (habit.frequency === 'custom' && habit.days && habit.days.includes(dayOfWeek)) scheduled = true;
-            }
+            const scheduled = isHabitScheduledOnDate(habit, dateStr);
+            const canToggle = scheduled && !isFuture;
 
             let cls = '';
             let icon = '';
@@ -512,7 +538,7 @@
                 }
             }
 
-            html += `<td><div class="cal-day ${cls} ${isToday ? 'today' : ''}">${d}${icon ? `<span class="status-icon">${icon}</span>` : ''}</div></td>`;
+            html += `<td><div class="cal-day ${cls} ${isToday ? 'today' : ''} ${canToggle ? 'togglable' : ''}" ${canToggle ? `data-date="${sanitize(dateStr)}"` : ''}>${d}${icon ? `<span class="status-icon">${icon}</span>` : ''}</div></td>`;
 
             if ((firstDay + d) % 7 === 0 && d < totalDays) {
                 html += '</tr><tr>';
@@ -521,6 +547,21 @@
 
         html += '</tr></tbody></table>';
         grid.innerHTML = html;
+
+        grid.querySelectorAll('.cal-day.togglable').forEach(dayEl => {
+            dayEl.addEventListener('click', () => {
+                const dateStr = dayEl.dataset.date;
+                if (!dateStr) return;
+
+                const key = habit.id + ':' + dateStr;
+                completions[key] = !completions[key];
+                if (!completions[key]) delete completions[key];
+                save();
+                renderCalendar();
+                renderDashboard();
+            });
+        });
+
         refreshIcons();
     }
 
@@ -641,19 +682,13 @@
 
         while (d <= end) {
             const ds = formatDate(d);
-            const dayOfWeek = d.getDay();
 
             habits.forEach(h => {
-                if (h.startDate > ds) return;
-                let scheduled = false;
-                if (h.frequency === 'daily') scheduled = true;
-                if (h.frequency === 'custom' && h.days && h.days.includes(dayOfWeek)) scheduled = true;
-
-                if (scheduled) {
+                if (isHabitScheduledOnDate(h, ds)) {
                     const done = !!completions[h.id + ':' + ds];
                     rows.push({
                         date: ds,
-                        day: DAY_NAMES[dayOfWeek],
+                        day: DAY_NAMES[dayOfWeekForDate(ds)],
                         habit: h.name,
                         status: done ? 'Completed' : 'Missed',
                     });
@@ -869,6 +904,7 @@
         initNavigation();
         initHabitModal();
         initCalendar();
+        initDashboardDateControls();
         initMood();
         initReports();
         initSettings();

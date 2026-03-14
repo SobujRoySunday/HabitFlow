@@ -360,6 +360,32 @@ h2 {
     margin-bottom: 1.5rem;
 }
 
+.today-habits-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.today-habits-controls label {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+.today-habits-controls .text-input {
+    width: 210px;
+    max-width: 100%;
+}
+
+.today-habits-date-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
 .today-habits-list {
     display: flex;
     flex-direction: column;
@@ -534,6 +560,15 @@ h2 {
     font-weight: 500;
     position: relative;
     transition: all var(--transition);
+}
+
+.cal-day.togglable {
+    cursor: pointer;
+}
+
+.cal-day.togglable:hover {
+    transform: translateY(-1px);
+    box-shadow: inset 0 0 0 1px var(--border-hover);
 }
 
 .cal-day.today {

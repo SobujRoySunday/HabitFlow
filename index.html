@@ -112,10 +112,15 @@
                 <div class="card today-habits-card glass">
                     <div class="card-header-row">
                         <i data-lucide="clipboard-list" class="card-icon"></i>
-                        <h2>Today's Habits</h2>
+                        <h2>Habit Check-Off</h2>
+                    </div>
+                    <div class="today-habits-controls">
+                        <label for="habit-check-date">Check-off date</label>
+                        <input type="date" id="habit-check-date" class="text-input">
+                        <p class="today-habits-date-label" id="habit-check-date-label"></p>
                     </div>
                     <div id="today-habits-list" class="today-habits-list">
-                        <p class="empty-state">No habits for today. Add some habits to get started!</p>
+                        <p class="empty-state">No habits scheduled for this date.</p>
                     </div>
                 </div>
             </section>
@@ -142,7 +147,7 @@
                 <div class="tab-header">
                     <div class="page-header">
                         <h1>Calendar</h1>
-                        <p class="page-subtitle">Track your progress over time</p>
+                        <p class="page-subtitle">Track your progress over time and click past days to adjust check-offs</p>
                     </div>
                     <div class="calendar-controls">
                         <select id="calendar-habit-select" class="select-input">
