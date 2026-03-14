@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HabitFlow</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar Navigation -->
+        <nav id="sidebar">
+            <div class="logo">
+                <div class="logo-icon-wrap">
+                    <i data-lucide="target" class="logo-lucide"></i>
+                </div>
+                <span class="logo-text">HabitFlow</span>
+            </div>
+            <ul class="nav-links">
+                <li>
+                    <a href="#" class="nav-link active" data-tab="dashboard">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link" data-tab="habits">
+                        <i data-lucide="list-checks"></i>
+                        <span>Habits</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link" data-tab="calendar">
+                        <i data-lucide="calendar-days"></i>
+                        <span>Calendar</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link" data-tab="mood">
+                        <i data-lucide="heart-pulse"></i>
+                        <span>Mood</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link" data-tab="reports">
+                        <i data-lucide="file-bar-chart"></i>
+                        <span>Reports</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link" data-tab="settings">
+                        <i data-lucide="settings"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="sidebar-divider"></div>
+                <p class="sidebar-credit">Built with focus</p>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main id="content">
+            <!-- Dashboard Tab -->
+            <section id="tab-dashboard" class="tab-content active">
+                <div class="page-header">
+                    <h1>Dashboard</h1>
+                    <p class="page-subtitle" id="dashboard-date"></p>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="card vitality-card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="activity" class="card-icon"></i>
+                            <h2>Vitality Score</h2>
+                        </div>
+                        <div class="vitality-ring">
+                            <svg viewBox="0 0 120 120">
+                                <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+                                <circle class="ring-fill" cx="60" cy="60" r="52" id="vitality-ring"></circle>
+                            </svg>
+                            <span class="vitality-score" id="vitality-score">0</span>
+                        </div>
+                        <p class="vitality-label" id="vitality-label">Start tracking!</p>
+                    </div>
+                    <div class="card mood-summary-card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="smile" class="card-icon"></i>
+                            <h2>Today's Mood</h2>
+                        </div>
+                        <div id="dashboard-mood" class="dashboard-mood">
+                            <p class="no-mood">No mood logged today</p>
+                        </div>
+                    </div>
+                    <div class="card streak-card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="flame" class="card-icon"></i>
+                            <h2>Best Streak</h2>
+                        </div>
+                        <div class="streak-display">
+                            <span class="streak-number" id="best-streak">0</span>
+                            <span class="streak-label">days</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card today-habits-card glass">
+                    <div class="card-header-row">
+                        <i data-lucide="clipboard-list" class="card-icon"></i>
+                        <h2>Today's Habits</h2>
+                    </div>
+                    <div id="today-habits-list" class="today-habits-list">
+                        <p class="empty-state">No habits for today. Add some habits to get started!</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Habits Tab -->
+            <section id="tab-habits" class="tab-content">
+                <div class="tab-header">
+                    <div class="page-header">
+                        <h1>My Habits</h1>
+                        <p class="page-subtitle">Manage your daily routines</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-add-habit">
+                        <i data-lucide="plus"></i>
+                        <span>Add Habit</span>
+                    </button>
+                </div>
+                <div id="habits-list" class="habits-list">
+                    <p class="empty-state">No habits yet. Click "Add Habit" to create one!</p>
+                </div>
+            </section>
+
+            <!-- Calendar Tab -->
+            <section id="tab-calendar" class="tab-content">
+                <div class="tab-header">
+                    <div class="page-header">
+                        <h1>Calendar</h1>
+                        <p class="page-subtitle">Track your progress over time</p>
+                    </div>
+                    <div class="calendar-controls">
+                        <select id="calendar-habit-select" class="select-input">
+                            <option value="">-- Select Habit --</option>
+                        </select>
+                        <div class="month-nav">
+                            <button class="btn btn-icon" id="cal-prev"><i data-lucide="chevron-left"></i></button>
+                            <span id="cal-month-label">March 2026</span>
+                            <button class="btn btn-icon" id="cal-next"><i data-lucide="chevron-right"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div id="calendar-grid" class="calendar-grid glass">
+                    <p class="empty-state">Select a habit to view its calendar</p>
+                </div>
+            </section>
+
+            <!-- Mood Tab -->
+            <section id="tab-mood" class="tab-content">
+                <div class="page-header">
+                    <h1>Mood Tracker</h1>
+                    <p class="page-subtitle">Log how you're feeling each day</p>
+                </div>
+                <div class="card mood-input-card glass">
+                    <h2>How are you feeling today?</h2>
+                    <div class="mood-options" id="mood-options">
+                        <button class="mood-btn" data-mood="5" title="Amazing">
+                            <i data-lucide="laugh"></i>
+                            <span class="mood-label-text">Amazing</span>
+                        </button>
+                        <button class="mood-btn" data-mood="4" title="Good">
+                            <i data-lucide="smile"></i>
+                            <span class="mood-label-text">Good</span>
+                        </button>
+                        <button class="mood-btn" data-mood="3" title="Okay">
+                            <i data-lucide="meh"></i>
+                            <span class="mood-label-text">Okay</span>
+                        </button>
+                        <button class="mood-btn" data-mood="2" title="Bad">
+                            <i data-lucide="frown"></i>
+                            <span class="mood-label-text">Bad</span>
+                        </button>
+                        <button class="mood-btn" data-mood="1" title="Terrible">
+                            <i data-lucide="annoyed"></i>
+                            <span class="mood-label-text">Terrible</span>
+                        </button>
+                    </div>
+                    <textarea id="mood-note" class="mood-note-input" placeholder="Add a note about your mood (optional)..." maxlength="500"></textarea>
+                    <button class="btn btn-primary" id="btn-save-mood">
+                        <i data-lucide="save"></i>
+                        <span>Save Mood</span>
+                    </button>
+                </div>
+                <div class="card glass">
+                    <div class="card-header-row">
+                        <i data-lucide="calendar-heart" class="card-icon"></i>
+                        <h2>Mood History</h2>
+                    </div>
+                    <div class="mood-history-controls">
+                        <button class="btn btn-icon" id="mood-prev"><i data-lucide="chevron-left"></i></button>
+                        <span id="mood-month-label">March 2026</span>
+                        <button class="btn btn-icon" id="mood-next"><i data-lucide="chevron-right"></i></button>
+                    </div>
+                    <div id="mood-history" class="mood-history"></div>
+                </div>
+            </section>
+
+            <!-- Reports Tab -->
+            <section id="tab-reports" class="tab-content">
+                <div class="page-header">
+                    <h1>Reports</h1>
+                    <p class="page-subtitle">Download summaries of your progress</p>
+                </div>
+                <div class="reports-grid">
+                    <div class="card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="calendar-range" class="card-icon"></i>
+                            <h2>Weekly Report</h2>
+                        </div>
+                        <p class="card-desc">Generate a report for the past 7 days</p>
+                        <div class="report-actions">
+                            <button class="btn btn-primary" id="btn-weekly-pdf">
+                                <i data-lucide="file-text"></i> <span>PDF</span>
+                            </button>
+                            <button class="btn btn-secondary" id="btn-weekly-csv">
+                                <i data-lucide="table"></i> <span>CSV</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="bar-chart-3" class="card-icon"></i>
+                            <h2>Monthly Report</h2>
+                        </div>
+                        <p class="card-desc">Generate a report for the current month</p>
+                        <div class="report-actions">
+                            <button class="btn btn-primary" id="btn-monthly-pdf">
+                                <i data-lucide="file-text"></i> <span>PDF</span>
+                            </button>
+                            <button class="btn btn-secondary" id="btn-monthly-csv">
+                                <i data-lucide="table"></i> <span>CSV</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section id="tab-settings" class="tab-content">
+                <div class="page-header">
+                    <h1>Settings</h1>
+                    <p class="page-subtitle">Manage your profile and data</p>
+                </div>
+                <div class="settings-grid">
+                    <div class="card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="user" class="card-icon"></i>
+                            <h2>Profile</h2>
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-name">Name</label>
+                            <input type="text" id="profile-name" class="text-input" placeholder="Your name" maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-dob">Date of Birth</label>
+                            <input type="date" id="profile-dob" class="text-input">
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-weight">Body Weight (kg)</label>
+                            <input type="number" id="profile-weight" class="text-input" placeholder="e.g. 70" min="1" max="500" step="0.1">
+                        </div>
+                        <button class="btn btn-primary" id="btn-save-profile">
+                            <i data-lucide="save"></i>
+                            <span>Save Profile</span>
+                        </button>
+                    </div>
+                    <div class="card glass">
+                        <div class="card-header-row">
+                            <i data-lucide="hard-drive-download" class="card-icon"></i>
+                            <h2>Data Backup</h2>
+                        </div>
+                        <p class="card-desc">All data is stored in your browser's local storage. Download backups regularly to keep your data safe.</p>
+                        <div class="backup-actions">
+                            <button class="btn btn-primary" id="btn-export-data">
+                                <i data-lucide="download"></i>
+                                <span>Export All Data</span>
+                            </button>
+                            <label class="btn btn-secondary file-label" for="import-file">
+                                <i data-lucide="upload"></i>
+                                <span>Import Data</span>
+                                <input type="file" id="import-file" accept=".json" hidden>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add/Edit Habit Modal -->
+    <div class="modal-overlay" id="habit-modal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h2 id="modal-title">Add New Habit</h2>
+                <button class="btn btn-icon modal-close" id="modal-close"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="habit-name">Habit Name</label>
+                    <input type="text" id="habit-name" class="text-input" placeholder="e.g. Drink 8 glasses of water" maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="habit-start">Start Date</label>
+                    <input type="date" id="habit-start" class="text-input">
+                </div>
+                <div class="form-group">
+                    <label for="habit-frequency">Frequency</label>
+                    <select id="habit-frequency" class="select-input">
+                        <option value="daily">Daily</option>
+                        <option value="custom">Custom Days</option>
+                    </select>
+                </div>
+                <div class="form-group" id="custom-days-group" style="display:none;">
+                    <label>Select Days</label>
+                    <div class="day-checkboxes">
+                        <label class="day-chip"><input type="checkbox" value="0"><span>Sun</span></label>
+                        <label class="day-chip"><input type="checkbox" value="1"><span>Mon</span></label>
+                        <label class="day-chip"><input type="checkbox" value="2"><span>Tue</span></label>
+                        <label class="day-chip"><input type="checkbox" value="3"><span>Wed</span></label>
+                        <label class="day-chip"><input type="checkbox" value="4"><span>Thu</span></label>
+                        <label class="day-chip"><input type="checkbox" value="5"><span>Fri</span></label>
+                        <label class="day-chip"><input type="checkbox" value="6"><span>Sat</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="habit-color">Color</label>
+                    <input type="color" id="habit-color" class="color-input" value="#7c5cfc">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-save">
+                    <i data-lucide="check"></i>
+                    <span>Save Habit</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Reminder Toast -->
+    <div id="backup-reminder" class="toast" style="display: none;">
+        <div class="toast-content glass">
+            <div class="toast-icon"><i data-lucide="shield-alert"></i></div>
+            <div class="toast-msg">
+                <strong>Daily Reminder</strong>
+                <span>Back up your data to keep it safe.</span>
+            </div>
+            <div class="toast-actions">
+                <button class="btn btn-sm btn-primary" id="toast-backup">Backup</button>
+                <button class="btn btn-sm btn-ghost" id="toast-dismiss">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
