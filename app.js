@@ -12,6 +12,8 @@
         MOODS: 'habitflow_moods',
         PROFILE: 'habitflow_profile',
         LAST_BACKUP_REMINDER: 'habitflow_last_backup_reminder',
+        GROQ_API_KEY: 'habitflow_groq_api_key',
+        COACH_LOCATION: 'habitflow_coach_location',
     };
 
     // SVG icon markup for moods (Lucide-style inline SVGs)
@@ -26,6 +28,43 @@
     const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
+    const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+    const GROQ_MODEL = 'openai/gpt-oss-120b';
+    const REPORT_MARKS = {
+        DONE: '✓',
+        MISSED: '✗',
+        UNSCHEDULED: '-',
+    };
+    const WEATHER_CODE_LABELS = {
+        0: 'Clear sky',
+        1: 'Mainly clear',
+        2: 'Partly cloudy',
+        3: 'Overcast',
+        45: 'Fog',
+        48: 'Depositing rime fog',
+        51: 'Light drizzle',
+        53: 'Moderate drizzle',
+        55: 'Dense drizzle',
+        56: 'Freezing drizzle',
+        57: 'Dense freezing drizzle',
+        61: 'Slight rain',
+        63: 'Moderate rain',
+        65: 'Heavy rain',
+        66: 'Light freezing rain',
+        67: 'Heavy freezing rain',
+        71: 'Slight snow fall',
+        73: 'Moderate snow fall',
+        75: 'Heavy snow fall',
+        77: 'Snow grains',
+        80: 'Slight rain showers',
+        81: 'Moderate rain showers',
+        82: 'Violent rain showers',
+        85: 'Slight snow showers',
+        86: 'Heavy snow showers',
+        95: 'Thunderstorm',
+        96: 'Thunderstorm with hail',
+        99: 'Heavy thunderstorm with hail',
+    };
 
     // ===== State =====
     let habits = [];
@@ -37,6 +76,11 @@
     let editingHabitId = null;
     let selectedMood = null;
     let selectedHabitDate = todayStr();
+    let selectedCalendarHabitIds = [];
+    let calendarFilterTouched = false;
+    let groqApiKey = '';
+    let coachLocation = '';
+    let coachInsightsCache = {};
 
     // ===== Helpers =====
     function todayStr() {
@@ -90,6 +134,164 @@
         return new Date(year, month + 1, 0).getDate();
     }
 
+    function getDateStringsInRange(startDateStr, endDateStr) {
+        const dates = [];
+        const d = parseDate(startDateStr);
+        const end = parseDate(endDateStr);
+
+        while (d <= end) {
+            dates.push(formatDate(d));
+            d.setDate(d.getDate() + 1);
+        }
+
+        return dates;
+    }
+
+    function getDateStringsForMonth(year, month) {
+        const totalDays = daysInMonth(year, month);
+        const dates = [];
+
+        for (let day = 1; day <= totalDays; day++) {
+            dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+        }
+
+        return dates;
+    }
+
+    function isHabitActiveInDateList(habit, dateList) {
+        return dateList.some(dateStr => isHabitScheduledOnDate(habit, dateStr));
+    }
+
+    function shortDateLabel(dateStr) {
+        const d = parseDate(dateStr);
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+    }
+
+    function csvEscape(value) {
+        return `"${String(value).replace(/"/g, '""')}"`;
+    }
+
+    function shiftDateStr(dateStr, deltaDays) {
+        const d = parseDate(dateStr);
+        d.setDate(d.getDate() + deltaDays);
+        return formatDate(d);
+    }
+
+    function weatherCodeLabel(code) {
+        return Object.prototype.hasOwnProperty.call(WEATHER_CODE_LABELS, code)
+            ? WEATHER_CODE_LABELS[code]
+            : `Weather code ${code}`;
+    }
+
+    function filterCompletionsInRange(startDate, endDate) {
+        const filtered = {};
+
+        Object.keys(completions).forEach(key => {
+            const splitIndex = key.lastIndexOf(':');
+            if (splitIndex === -1) return;
+            const dateStr = key.slice(splitIndex + 1);
+
+            if (dateStr >= startDate && dateStr <= endDate) {
+                filtered[key] = completions[key];
+            }
+        });
+
+        return filtered;
+    }
+
+    function filterMoodsInRange(startDate, endDate) {
+        const filtered = {};
+
+        Object.keys(moods).forEach(dateStr => {
+            if (dateStr >= startDate && dateStr <= endDate) {
+                filtered[dateStr] = moods[dateStr];
+            }
+        });
+
+        return filtered;
+    }
+
+    function syncCalendarSelectedHabits(activeHabits) {
+        const activeHabitIds = activeHabits.map(h => h.id);
+
+        if (!calendarFilterTouched) {
+            selectedCalendarHabitIds = activeHabitIds.slice();
+            return;
+        }
+
+        const activeSet = new Set(activeHabitIds);
+        selectedCalendarHabitIds = selectedCalendarHabitIds.filter(id => activeSet.has(id));
+    }
+
+    function setCalendarFilterSummary(selectedCount, totalCount) {
+        const summaryEl = document.getElementById('calendar-filter-summary');
+        if (!summaryEl) return;
+
+        if (totalCount === 0) {
+            summaryEl.textContent = '0 selected';
+            return;
+        }
+
+        if (selectedCount === totalCount) {
+            summaryEl.textContent = `All ${totalCount} selected`;
+            return;
+        }
+
+        summaryEl.textContent = `${selectedCount} of ${totalCount} selected`;
+    }
+
+    function renderCalendarHabitFilter(activeHabits) {
+        const listEl = document.getElementById('calendar-habit-filter-list');
+        const selectAllBtn = document.getElementById('calendar-filter-select-all');
+        const clearBtn = document.getElementById('calendar-filter-clear');
+
+        syncCalendarSelectedHabits(activeHabits);
+
+        if (activeHabits.length === 0) {
+            listEl.innerHTML = '<p class="calendar-filter-empty">No active habits in this month</p>';
+            if (selectAllBtn) selectAllBtn.disabled = true;
+            if (clearBtn) clearBtn.disabled = true;
+            setCalendarFilterSummary(0, 0);
+            return;
+        }
+
+        listEl.innerHTML = activeHabits.map(h => `
+            <label class="calendar-habit-chip">
+                <input type="checkbox" value="${sanitize(h.id)}" ${selectedCalendarHabitIds.includes(h.id) ? 'checked' : ''}>
+                <span><span class="chip-dot" style="background:${sanitize(h.color || '#7c5cfc')}"></span>${sanitize(h.name)}</span>
+            </label>
+        `).join('');
+
+        listEl.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            input.addEventListener('change', () => {
+                calendarFilterTouched = true;
+                selectedCalendarHabitIds = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+                setCalendarFilterSummary(selectedCalendarHabitIds.length, activeHabits.length);
+                renderCalendar();
+            });
+        });
+
+        if (selectAllBtn) {
+            selectAllBtn.disabled = false;
+            selectAllBtn.onclick = () => {
+                calendarFilterTouched = true;
+                selectedCalendarHabitIds = activeHabits.map(h => h.id);
+                renderCalendar();
+            };
+        }
+
+        if (clearBtn) {
+            clearBtn.disabled = false;
+            clearBtn.onclick = () => {
+                calendarFilterTouched = true;
+                selectedCalendarHabitIds = [];
+                renderCalendar();
+            };
+        }
+
+        setCalendarFilterSummary(selectedCalendarHabitIds.length, activeHabits.length);
+    }
+
     function sanitize(str) {
         const div = document.createElement('div');
         div.textContent = str;
@@ -124,11 +326,17 @@
             completions = JSON.parse(localStorage.getItem(STORAGE_KEYS.COMPLETIONS)) || {};
             moods = JSON.parse(localStorage.getItem(STORAGE_KEYS.MOODS)) || {};
             profile = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILE)) || { name: '', dob: '', weight: '' };
+            groqApiKey = localStorage.getItem(STORAGE_KEYS.GROQ_API_KEY) || '';
+            coachLocation = localStorage.getItem(STORAGE_KEYS.COACH_LOCATION) || '';
+            coachInsightsCache = {};
         } catch (e) {
             habits = [];
             completions = {};
             moods = {};
             profile = { name: '', dob: '', weight: '' };
+            groqApiKey = '';
+            coachLocation = '';
+            coachInsightsCache = {};
         }
     }
 
@@ -300,7 +508,7 @@
         refreshIcons();
     }
 
-    function renderBestStreak() {
+    function calculateBestStreak() {
         let bestStreak = 0;
 
         habits.forEach(h => {
@@ -324,7 +532,11 @@
             if (streak > bestStreak) bestStreak = streak;
         });
 
-        document.getElementById('best-streak').textContent = bestStreak;
+        return bestStreak;
+    }
+
+    function renderBestStreak() {
+        document.getElementById('best-streak').textContent = calculateBestStreak();
     }
 
     // ===== Habits CRUD =====
@@ -374,6 +586,8 @@
         });
         save();
         renderHabitsList();
+        renderDashboard();
+        renderCalendar();
     }
 
     function openHabitModal(habitId) {
@@ -458,6 +672,7 @@
         closeHabitModal();
         renderHabitsList();
         renderDashboard();
+        renderCalendar();
     }
 
     function initHabitModal() {
@@ -478,82 +693,103 @@
 
     // ===== Calendar =====
     function renderCalendar() {
-        populateHabitSelect();
-
-        const select = document.getElementById('calendar-habit-select');
         const grid = document.getElementById('calendar-grid');
-        const habitId = select.value;
-
         const year = calendarMonth.getFullYear();
         const month = calendarMonth.getMonth();
         document.getElementById('cal-month-label').textContent =
             MONTH_NAMES[month] + ' ' + year;
 
-        if (!habitId) {
-            grid.innerHTML = '<p class="empty-state">Select a habit to view its calendar</p>';
+        const monthDates = getDateStringsForMonth(year, month);
+        const activeHabits = habits.filter(h => isHabitActiveInDateList(h, monthDates));
+
+        renderCalendarHabitFilter(activeHabits);
+
+        if (activeHabits.length === 0) {
+            grid.innerHTML = '<p class="empty-state">No active habits in this month yet</p>';
             return;
         }
 
-        const habit = habits.find(h => h.id === habitId);
-        if (!habit) {
-            grid.innerHTML = '<p class="empty-state">Habit not found</p>';
+        const habitsToDisplay = activeHabits.filter(h => selectedCalendarHabitIds.includes(h.id));
+
+        if (habitsToDisplay.length === 0) {
+            grid.innerHTML = '<p class="empty-state">Select one or more habits above to display them in the calendar</p>';
             return;
         }
 
-        const totalDays = daysInMonth(year, month);
-        const firstDay = new Date(year, month, 1).getDay();
         const todayD = todayStr();
 
-        let html = '<table class="calendar-table"><thead><tr>';
-        DAY_NAMES.forEach(d => html += `<th>${d}</th>`);
-        html += '</tr></thead><tbody><tr>';
+        let html = `
+            <div class="calendar-legend">
+                <span class="legend-item"><span class="legend-mark completed"><i data-lucide="check"></i></span>Tick = Completed</span>
+                <span class="legend-item"><span class="legend-mark missed"><i data-lucide="x"></i></span>Cross = Missed</span>
+                <span class="legend-item"><span class="legend-mark unscheduled"><i data-lucide="minus"></i></span>Not scheduled</span>
+            </div>
+            <table class="calendar-matrix-table">
+                <thead>
+                    <tr>
+                        <th class="habit-head">Habit</th>
+        `;
 
-        for (let i = 0; i < firstDay; i++) {
-            html += '<td></td>';
-        }
-
-        for (let d = 1; d <= totalDays; d++) {
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            const dateObj = new Date(year, month, d);
+        monthDates.forEach(dateStr => {
+            const dayNum = Number(dateStr.slice(-2));
+            const dow = DAY_NAMES[dayOfWeekForDate(dateStr)];
             const isToday = dateStr === todayD;
-            const isBeforeStart = dateStr < habit.startDate;
-            const isFuture = dateStr > todayD;
-            const scheduled = isHabitScheduledOnDate(habit, dateStr);
-            const canToggle = scheduled && !isFuture;
+            html += `<th class="matrix-day-head ${isToday ? 'today-col' : ''}" title="${sanitize(dateStr)}">${dayNum}<span class="matrix-dow">${dow}</span></th>`;
+        });
 
-            let cls = '';
-            let icon = '';
-            if (isBeforeStart) {
-                cls = 'not-started';
-            } else if (isFuture) {
-                cls = 'future';
-            } else if (scheduled) {
+        html += '</tr></thead><tbody>';
+
+        habitsToDisplay.forEach(habit => {
+            html += `<tr><td class="habit-col"><span class="habit-dot" style="background:${sanitize(habit.color || '#7c5cfc')}"></span><span>${sanitize(habit.name)}</span></td>`;
+
+            monthDates.forEach(dateStr => {
                 const key = habit.id + ':' + dateStr;
-                if (completions[key]) {
-                    cls = 'completed';
-                    icon = '<i data-lucide="check-circle"></i>';
-                } else {
-                    cls = 'missed';
-                    icon = '<i data-lucide="x-circle"></i>';
+                const isScheduled = isHabitScheduledOnDate(habit, dateStr);
+                const isFuture = dateStr > todayD;
+                const isBeforeStart = dateStr < habit.startDate;
+
+                let stateClass = isBeforeStart ? 'not-started' : 'unscheduled';
+                let marker = '<span class="matrix-placeholder">-</span>';
+                let titleText = `${habit.name} on ${dateStr}: Not scheduled`;
+                let canToggle = false;
+
+                if (isScheduled) {
+                    if (isFuture) {
+                        stateClass = 'future';
+                        titleText = `${habit.name} on ${dateStr}: Upcoming`;
+                    } else {
+                        const done = !!completions[key];
+                        stateClass = done ? 'completed' : 'missed';
+                        marker = done ? '<i data-lucide="check"></i>' : '<i data-lucide="x"></i>';
+                        titleText = `${habit.name} on ${dateStr}: ${done ? 'Completed' : 'Missed'}. Click to toggle.`;
+                        canToggle = true;
+                    }
+                } else if (isBeforeStart) {
+                    titleText = `${habit.name} on ${dateStr}: Not started`;
                 }
-            }
 
-            html += `<td><div class="cal-day ${cls} ${isToday ? 'today' : ''} ${canToggle ? 'togglable' : ''}" ${canToggle ? `data-date="${sanitize(dateStr)}"` : ''}>${d}${icon ? `<span class="status-icon">${icon}</span>` : ''}</div></td>`;
+                const todayClass = dateStr === todayD ? 'today' : '';
+                const toggleAttrs = canToggle
+                    ? `data-habit-id="${sanitize(habit.id)}" data-date="${sanitize(dateStr)}"`
+                    : '';
 
-            if ((firstDay + d) % 7 === 0 && d < totalDays) {
-                html += '</tr><tr>';
-            }
-        }
+                html += `<td class="matrix-cell"><div class="matrix-mark ${stateClass} ${todayClass} ${canToggle ? 'togglable' : ''}" ${toggleAttrs} title="${sanitize(titleText)}">${marker}</div></td>`;
+            });
 
-        html += '</tr></tbody></table>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
         grid.innerHTML = html;
 
-        grid.querySelectorAll('.cal-day.togglable').forEach(dayEl => {
-            dayEl.addEventListener('click', () => {
-                const dateStr = dayEl.dataset.date;
-                if (!dateStr) return;
+        grid.querySelectorAll('.matrix-mark.togglable').forEach(markEl => {
+            markEl.addEventListener('click', () => {
+                const habitId = markEl.dataset.habitId;
+                const dateStr = markEl.dataset.date;
 
-                const key = habit.id + ':' + dateStr;
+                if (!habitId || !dateStr) return;
+
+                const key = habitId + ':' + dateStr;
                 completions[key] = !completions[key];
                 if (!completions[key]) delete completions[key];
                 save();
@@ -565,15 +801,7 @@
         refreshIcons();
     }
 
-    function populateHabitSelect() {
-        const select = document.getElementById('calendar-habit-select');
-        const currentVal = select.value;
-        select.innerHTML = '<option value="">-- Select Habit --</option>' +
-            habits.map(h => `<option value="${sanitize(h.id)}" ${h.id === currentVal ? 'selected' : ''}>${sanitize(h.name)}</option>`).join('');
-    }
-
     function initCalendar() {
-        document.getElementById('calendar-habit-select').addEventListener('change', renderCalendar);
         document.getElementById('cal-prev').addEventListener('click', () => {
             calendarMonth.setMonth(calendarMonth.getMonth() - 1);
             renderCalendar();
@@ -675,29 +903,46 @@
     }
 
     // ===== Reports =====
-    function getReportData(startDate, endDate) {
-        const rows = [];
-        const d = new Date(parseDate(startDate));
-        const end = parseDate(endDate);
+    function getReportMatrixData(startDate, endDate) {
+        const dates = getDateStringsInRange(startDate, endDate);
 
-        while (d <= end) {
-            const ds = formatDate(d);
+        const rows = habits
+            .filter(habit => isHabitActiveInDateList(habit, dates))
+            .map(habit => {
+                let completed = 0;
+                let scheduled = 0;
 
-            habits.forEach(h => {
-                if (isHabitScheduledOnDate(h, ds)) {
-                    const done = !!completions[h.id + ':' + ds];
-                    rows.push({
-                        date: ds,
-                        day: DAY_NAMES[dayOfWeekForDate(ds)],
-                        habit: h.name,
-                        status: done ? 'Completed' : 'Missed',
-                    });
-                }
+                const marks = dates.map(dateStr => {
+                    if (!isHabitScheduledOnDate(habit, dateStr)) {
+                        return REPORT_MARKS.UNSCHEDULED;
+                    }
+
+                    scheduled++;
+                    const done = !!completions[habit.id + ':' + dateStr];
+                    if (done) {
+                        completed++;
+                        return REPORT_MARKS.DONE;
+                    }
+
+                    return REPORT_MARKS.MISSED;
+                });
+
+                const rate = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+
+                return {
+                    habitName: habit.name,
+                    marks,
+                    completed,
+                    scheduled,
+                    rate,
+                };
             });
 
-            d.setDate(d.getDate() + 1);
-        }
-        return rows;
+        const totalScheduled = rows.reduce((sum, row) => sum + row.scheduled, 0);
+        const totalDone = rows.reduce((sum, row) => sum + row.completed, 0);
+        const overallRate = totalScheduled > 0 ? Math.round((totalDone / totalScheduled) * 100) : 0;
+
+        return { dates, rows, totalScheduled, totalDone, overallRate };
     }
 
     function getDateRange(type) {
@@ -712,24 +957,710 @@
         return { start: formatDate(start), end: formatDate(today) };
     }
 
-    function generateCSV(type) {
-        const { start, end } = getDateRange(type);
-        const rows = getReportData(start, end);
+    function getAverageMoodForRange(startDate, endDate) {
+        const moodValues = [];
+        const dates = getDateStringsInRange(startDate, endDate);
 
-        let csv = 'Date,Day,Habit,Status\n';
-        rows.forEach(r => {
-            csv += `"${r.date}","${r.day}","${r.habit}","${r.status}"\n`;
+        dates.forEach(dateStr => {
+            const moodEntry = moods[dateStr];
+            if (moodEntry && typeof moodEntry.mood === 'number') {
+                moodValues.push(moodEntry.mood);
+            }
         });
 
-        csv += '\n\nProfile Information\n';
-        csv += `Name,"${sanitize(profile.name || 'N/A')}"\n`;
-        csv += `Age,"${calcAge(profile.dob) || 'N/A'}"\n`;
-        csv += `Weight,"${profile.weight ? profile.weight + ' kg' : 'N/A'}"\n`;
+        if (moodValues.length === 0) {
+            return null;
+        }
+
+        return Number((moodValues.reduce((sum, val) => sum + val, 0) / moodValues.length).toFixed(2));
+    }
+
+    function getSummaryForRange(startDate, endDate) {
+        const matrix = getReportMatrixData(startDate, endDate);
+        return {
+            range: { start: startDate, end: endDate },
+            totalScheduled: matrix.totalScheduled,
+            totalCompleted: matrix.totalDone,
+            completionRate: matrix.overallRate,
+            averageMood: getAverageMoodForRange(startDate, endDate),
+        };
+    }
+
+    function getPeriodContext(periodType) {
+        const range = getDateRange(periodType);
+        const dayCount = getDateStringsInRange(range.start, range.end).length;
+        const previousEnd = shiftDateStr(range.start, -1);
+        const previousStart = shiftDateStr(previousEnd, -(dayCount - 1));
+
+        return {
+            type: periodType,
+            range,
+            dayCount,
+            previousRange: {
+                start: previousStart,
+                end: previousEnd,
+            },
+        };
+    }
+
+    function getAllTrackedDateRange() {
+        const today = todayStr();
+        const candidateDates = [today];
+
+        habits.forEach(habit => {
+            if (habit && habit.startDate) {
+                candidateDates.push(habit.startDate);
+            }
+        });
+
+        Object.keys(moods).forEach(dateStr => {
+            candidateDates.push(dateStr);
+        });
+
+        Object.keys(completions).forEach(key => {
+            const splitIndex = key.lastIndexOf(':');
+            if (splitIndex === -1) return;
+            candidateDates.push(key.slice(splitIndex + 1));
+        });
+
+        candidateDates.sort();
+        const start = candidateDates[0] || today;
+        const end = today;
+        const dayCount = getDateStringsInRange(start, end).length;
+
+        return { start, end, dayCount };
+    }
+
+    function getCurrentStreakForHabit(habit) {
+        let streak = 0;
+        const today = new Date();
+
+        for (let i = 0; i < 365; i++) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+            const ds = formatDate(d);
+
+            if (ds < habit.startDate) break;
+
+            if (!isHabitScheduledOnDate(habit, ds)) continue;
+
+            if (completions[habit.id + ':' + ds]) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+
+        return streak;
+    }
+
+    function getHabitSummaryForRange(habit, startDate, endDate) {
+        const dates = getDateStringsInRange(startDate, endDate);
+        let scheduled = 0;
+        let done = 0;
+
+        dates.forEach(dateStr => {
+            if (!isHabitScheduledOnDate(habit, dateStr)) return;
+            scheduled++;
+            if (completions[habit.id + ':' + dateStr]) {
+                done++;
+            }
+        });
+
+        const rate = scheduled > 0 ? Math.round((done / scheduled) * 100) : 0;
+        return { scheduled, done, rate };
+    }
+
+    async function fetchWeatherContext(locationInput) {
+        const query = (locationInput || '').trim();
+        if (!query) {
+            return { status: 'not_configured' };
+        }
+
+        try {
+            const geoResp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`);
+            if (!geoResp.ok) {
+                return { status: 'geocode_error', query, reason: `HTTP ${geoResp.status}` };
+            }
+
+            const geoData = await geoResp.json();
+            const place = geoData && Array.isArray(geoData.results) ? geoData.results[0] : null;
+
+            if (!place) {
+                return { status: 'location_not_found', query };
+            }
+
+            const lat = Number(place.latitude);
+            const lon = Number(place.longitude);
+            const weatherResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&forecast_days=1&timezone=auto`);
+
+            if (!weatherResp.ok) {
+                return {
+                    status: 'weather_error',
+                    query,
+                    resolvedLocation: `${place.name}${place.admin1 ? ', ' + place.admin1 : ''}${place.country ? ', ' + place.country : ''}`,
+                    latitude: lat,
+                    longitude: lon,
+                    reason: `HTTP ${weatherResp.status}`,
+                };
+            }
+
+            const weatherData = await weatherResp.json();
+            const current = weatherData.current || {};
+            const daily = weatherData.daily || {};
+            const weatherCode = typeof current.weather_code === 'number' ? current.weather_code : null;
+            const dayCode = Array.isArray(daily.weather_code) && typeof daily.weather_code[0] === 'number'
+                ? daily.weather_code[0]
+                : null;
+
+            return {
+                status: 'ok',
+                query,
+                resolvedLocation: `${place.name}${place.admin1 ? ', ' + place.admin1 : ''}${place.country ? ', ' + place.country : ''}`,
+                latitude: lat,
+                longitude: lon,
+                timezone: weatherData.timezone || place.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+                current: {
+                    temperatureC: typeof current.temperature_2m === 'number' ? current.temperature_2m : null,
+                    humidityPercent: typeof current.relative_humidity_2m === 'number' ? current.relative_humidity_2m : null,
+                    windSpeedKmh: typeof current.wind_speed_10m === 'number' ? current.wind_speed_10m : null,
+                    weatherCode,
+                    condition: weatherCode === null ? null : weatherCodeLabel(weatherCode),
+                },
+                todayForecast: {
+                    maxTempC: Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max[0] : null,
+                    minTempC: Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min[0] : null,
+                    precipitationProbabilityMax: Array.isArray(daily.precipitation_probability_max)
+                        ? daily.precipitation_probability_max[0]
+                        : null,
+                    weatherCode: dayCode,
+                    condition: dayCode === null ? null : weatherCodeLabel(dayCode),
+                },
+            };
+        } catch (err) {
+            return {
+                status: 'weather_unavailable',
+                query,
+                reason: err && err.message ? err.message : 'Network error',
+            };
+        }
+    }
+
+    function buildCoachPayloadForPeriod(periodContext, weatherContext) {
+        const periodRange = periodContext.range;
+        const previousRange = periodContext.previousRange;
+
+        const habitPerformance = habits.map(habit => {
+            const periodSummary = getHabitSummaryForRange(habit, periodRange.start, periodRange.end);
+            const previousSummary = getHabitSummaryForRange(habit, previousRange.start, previousRange.end);
+
+            return {
+                habitId: habit.id,
+                name: habit.name,
+                frequency: habit.frequency,
+                startDate: habit.startDate,
+                currentStreak: getCurrentStreakForHabit(habit),
+                period: periodSummary,
+                previousPeriod: previousSummary,
+            };
+        });
+
+        return {
+            generatedAt: new Date().toISOString(),
+            todayContext: {
+                isoDate: todayStr(),
+                friendlyDate: friendlyDate(new Date()),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                locale: navigator.language || 'en-US',
+            },
+            period: {
+                type: periodContext.type,
+                range: periodRange,
+                dayCount: periodContext.dayCount,
+                previousRange,
+            },
+            profile,
+            habits: habits.map(habit => ({
+                id: habit.id,
+                name: habit.name,
+                frequency: habit.frequency,
+                startDate: habit.startDate,
+            })),
+            periodData: {
+                completions: filterCompletionsInRange(periodRange.start, periodRange.end),
+                moods: filterMoodsInRange(periodRange.start, periodRange.end),
+            },
+            summary: {
+                bestStreakOverall: calculateBestStreak(),
+                activeHabitCount: habits.length,
+                period: getSummaryForRange(periodRange.start, periodRange.end),
+                previousPeriod: getSummaryForRange(previousRange.start, previousRange.end),
+                habitPerformance,
+            },
+            context: {
+                configuredLocation: coachLocation || null,
+                weather: weatherContext,
+            },
+        };
+    }
+
+    function buildCoachPayloadForFullHistory(weatherContext) {
+        const historyRange = getAllTrackedDateRange();
+        const last7Range = getDateRange('weekly');
+        const recent30Range = {
+            start: shiftDateStr(todayStr(), -29),
+            end: todayStr(),
+        };
+
+        const habitPerformance = habits.map(habit => ({
+            habitId: habit.id,
+            name: habit.name,
+            frequency: habit.frequency,
+            startDate: habit.startDate,
+            currentStreak: getCurrentStreakForHabit(habit),
+            fullHistory: getHabitSummaryForRange(habit, historyRange.start, historyRange.end),
+            last30Days: getHabitSummaryForRange(habit, recent30Range.start, recent30Range.end),
+        }));
+
+        return {
+            generatedAt: new Date().toISOString(),
+            todayContext: {
+                isoDate: todayStr(),
+                friendlyDate: friendlyDate(new Date()),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                locale: navigator.language || 'en-US',
+            },
+            scope: 'full_history',
+            historyRange,
+            profile,
+            habits: habits.map(habit => ({
+                id: habit.id,
+                name: habit.name,
+                frequency: habit.frequency,
+                startDate: habit.startDate,
+            })),
+            fullData: {
+                completions,
+                moods,
+            },
+            summary: {
+                bestStreakOverall: calculateBestStreak(),
+                activeHabitCount: habits.length,
+                fullHistory: getSummaryForRange(historyRange.start, historyRange.end),
+                last7Days: getSummaryForRange(last7Range.start, last7Range.end),
+                last30Days: getSummaryForRange(recent30Range.start, recent30Range.end),
+                habitPerformance,
+            },
+            context: {
+                configuredLocation: coachLocation || null,
+                weather: weatherContext,
+            },
+        };
+    }
+
+    function setCoachStatus(message, type) {
+        const statusEl = document.getElementById('coach-status-dashboard');
+        if (!statusEl) return;
+
+        statusEl.textContent = message || '';
+        statusEl.classList.remove('success', 'error');
+        if (type === 'success') statusEl.classList.add('success');
+        if (type === 'error') statusEl.classList.add('error');
+    }
+
+    function normalizeStringArray(value, maxItems) {
+        if (!Array.isArray(value)) return [];
+        return value
+            .filter(item => typeof item === 'string' && item.trim())
+            .map(item => item.trim())
+            .slice(0, maxItems);
+    }
+
+    function parseCoachJsonResponse(content) {
+        if (!content || typeof content !== 'string') return null;
+
+        try {
+            return JSON.parse(content);
+        } catch (err) {
+            const start = content.indexOf('{');
+            const end = content.lastIndexOf('}');
+            if (start === -1 || end === -1 || end <= start) {
+                return null;
+            }
+            try {
+                return JSON.parse(content.slice(start, end + 1));
+            } catch (err2) {
+                return null;
+            }
+        }
+    }
+
+    function renderStreamingCoachOutput(rawText) {
+        const outputEl = document.getElementById('coach-output-dashboard');
+        if (!outputEl) return;
+
+        outputEl.innerHTML = `<pre class="coach-raw">${sanitize(rawText)}</pre>`;
+    }
+
+    function renderCoachInsights(parsed, fallbackText, outputId) {
+        const outputEl = document.getElementById(outputId || 'coach-output-dashboard');
+        if (!outputEl) return;
+
+        if (!parsed) {
+            outputEl.innerHTML = `<pre class="coach-raw">${sanitize(fallbackText || 'No content returned by model.')}</pre>`;
+            return;
+        }
+
+        const analysis = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
+        const tips = normalizeStringArray(parsed.tips, 8);
+        const advice = normalizeStringArray(parsed.advice, 8);
+        const quotes = normalizeStringArray(parsed.quotes, 6);
+        const actionPlan = normalizeStringArray(parsed.action_plan || parsed.actionPlan, 8);
+
+        let html = '';
+
+        if (analysis) {
+            html += `<section class="coach-section"><h3>Analysis</h3><p>${sanitize(analysis)}</p></section>`;
+        }
+
+        if (tips.length > 0) {
+            html += `<section class="coach-section"><h3>Tips</h3><ul class="coach-list">${tips.map(item => `<li>${sanitize(item)}</li>`).join('')}</ul></section>`;
+        }
+
+        if (advice.length > 0) {
+            html += `<section class="coach-section"><h3>Advice</h3><ul class="coach-list">${advice.map(item => `<li>${sanitize(item)}</li>`).join('')}</ul></section>`;
+        }
+
+        if (actionPlan.length > 0) {
+            html += `<section class="coach-section"><h3>Action Plan</h3><ul class="coach-list">${actionPlan.map(item => `<li>${sanitize(item)}</li>`).join('')}</ul></section>`;
+        }
+
+        if (quotes.length > 0) {
+            html += `<section class="coach-section"><h3>Motivation Quotes</h3>${quotes.map(item => `<blockquote class="coach-quote">${sanitize(item)}</blockquote>`).join('')}</section>`;
+        }
+
+        if (!html) {
+            html = `<pre class="coach-raw">${sanitize(JSON.stringify(parsed, null, 2))}</pre>`;
+        }
+
+        outputEl.innerHTML = html;
+    }
+
+    function getCoachCacheKey(periodContext) {
+        return `${periodContext.type}:${periodContext.range.start}:${periodContext.range.end}:${(coachLocation || '').trim().toLowerCase()}`;
+    }
+
+    async function requestGroqCoachCompletion(messages, options) {
+        const useStream = !!(options && options.stream);
+        const onChunk = options && typeof options.onChunk === 'function' ? options.onChunk : null;
+
+        const response = await fetch(GROQ_API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${groqApiKey}`,
+            },
+            body: JSON.stringify({
+                model: GROQ_MODEL,
+                temperature: 0.7,
+                stream: useStream,
+                messages,
+            }),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Groq request failed (${response.status}): ${errText.slice(0, 220)}`);
+        }
+
+        if (!useStream || !response.body) {
+            const result = await response.json();
+            const content = result && result.choices && result.choices[0] && result.choices[0].message
+                ? result.choices[0].message.content
+                : '';
+            return { content };
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let done = false;
+        let buffer = '';
+        let content = '';
+
+        while (!done) {
+            const readResult = await reader.read();
+            done = readResult.done;
+            buffer += decoder.decode(readResult.value || new Uint8Array(), { stream: !done });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data:')) return;
+
+                const data = trimmed.slice(5).trim();
+                if (!data || data === '[DONE]') return;
+
+                try {
+                    const parsed = JSON.parse(data);
+                    const chunk = parsed && parsed.choices && parsed.choices[0] && parsed.choices[0].delta
+                        ? parsed.choices[0].delta.content || ''
+                        : '';
+                    if (!chunk) return;
+
+                    content += chunk;
+                    if (onChunk) {
+                        onChunk(chunk, content);
+                    }
+                } catch (err) {
+                    // Ignore malformed stream lines.
+                }
+            });
+        }
+
+        return { content };
+    }
+
+    async function getCoachInsightsForPeriod(periodType, options) {
+        const periodContext = getPeriodContext(periodType);
+        const useCache = options && Object.prototype.hasOwnProperty.call(options, 'useCache')
+            ? !!options.useCache
+            : true;
+        const cacheKey = getCoachCacheKey(periodContext);
+
+        if (useCache && coachInsightsCache[cacheKey]) {
+            return coachInsightsCache[cacheKey];
+        }
+
+        const weatherContext = await fetchWeatherContext(coachLocation);
+        const payload = buildCoachPayloadForPeriod(periodContext, weatherContext);
+
+        const messages = [
+            {
+                role: 'system',
+                content: 'You are a compassionate habit coach. Return JSON only with keys: analysis (string), tips (string[]), advice (string[]), action_plan (string[]), quotes (string[]). Focus your evaluation on the provided period, while using today and weather/location context for practical action steps.',
+            },
+            {
+                role: 'user',
+                content: 'Analyze this HabitFlow dataset and provide coaching. The response must be tailored to ONLY the provided period window. Data: ' + JSON.stringify(payload),
+            },
+        ];
+
+        const response = await requestGroqCoachCompletion(messages, options || {});
+        const parsed = parseCoachJsonResponse(response.content);
+
+        const result = {
+            parsed,
+            content: response.content,
+            periodContext,
+            weatherContext,
+        };
+
+        coachInsightsCache[cacheKey] = result;
+        return result;
+    }
+
+    async function getCoachInsightsForFullHistory(options) {
+        const useCache = options && Object.prototype.hasOwnProperty.call(options, 'useCache')
+            ? !!options.useCache
+            : true;
+
+        const cacheKey = `full-history:${todayStr()}:${(coachLocation || '').trim().toLowerCase()}:${habits.length}:${Object.keys(completions).length}:${Object.keys(moods).length}`;
+
+        if (useCache && coachInsightsCache[cacheKey]) {
+            return coachInsightsCache[cacheKey];
+        }
+
+        const weatherContext = await fetchWeatherContext(coachLocation);
+        const payload = buildCoachPayloadForFullHistory(weatherContext);
+
+        const messages = [
+            {
+                role: 'system',
+                content: 'You are a compassionate habit coach. Return JSON only with keys: analysis (string), tips (string[]), advice (string[]), action_plan (string[]), quotes (string[]). Evaluate the user across their complete tracked history, use trend-aware reasoning, and provide practical actions that fit today and provided weather/location context.',
+            },
+            {
+                role: 'user',
+                content: 'Analyze this HabitFlow dataset and provide coaching using the entire history. Data: ' + JSON.stringify(payload),
+            },
+        ];
+
+        const response = await requestGroqCoachCompletion(messages, options || {});
+        const parsed = parseCoachJsonResponse(response.content);
+
+        const result = {
+            parsed,
+            content: response.content,
+            scope: 'full_history',
+            weatherContext,
+        };
+
+        coachInsightsCache[cacheKey] = result;
+        return result;
+    }
+
+    async function runDashboardCoachAnalysis() {
+        const btn = document.getElementById('btn-groq-coach-dashboard');
+
+        if (!groqApiKey) {
+            setCoachStatus('Configure Groq API key in Settings first.', 'error');
+            return;
+        }
+
+        if (btn) btn.disabled = true;
+        setCoachStatus('Streaming AI coach suggestions...', '');
+        renderStreamingCoachOutput('Starting analysis...');
+
+        try {
+            const result = await getCoachInsightsForFullHistory({
+                stream: true,
+                useCache: false,
+                onChunk: function (_chunk, fullText) {
+                    renderStreamingCoachOutput(fullText);
+                },
+            });
+
+            renderCoachInsights(result.parsed, result.content, 'coach-output-dashboard');
+            setCoachStatus('Full-history AI plan generated successfully.', 'success');
+        } catch (err) {
+            const message = err && err.message ? err.message : 'Unknown error while calling Groq API.';
+            setCoachStatus(message, 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function generateCSV(type) {
+        const { start, end } = getDateRange(type);
+        const matrix = getReportMatrixData(start, end);
+
+        const header = ['Habit', ...matrix.dates.map(shortDateLabel), 'Completed', 'Scheduled', 'Rate'];
+        let csv = header.map(csvEscape).join(',') + '\n';
+
+        if (matrix.rows.length === 0) {
+            csv += `${csvEscape('No active habits in this period')}\n`;
+        } else {
+            matrix.rows.forEach(row => {
+                const cells = [
+                    row.habitName,
+                    ...row.marks,
+                    row.completed,
+                    row.scheduled,
+                    `${row.rate}%`,
+                ];
+                csv += cells.map(csvEscape).join(',') + '\n';
+            });
+        }
+
+        csv += '\nSummary\n';
+        csv += `${csvEscape('Total Scheduled')},${csvEscape(matrix.totalScheduled)}\n`;
+        csv += `${csvEscape('Completed')},${csvEscape(matrix.totalDone)}\n`;
+        csv += `${csvEscape('Completion Rate')},${csvEscape(matrix.overallRate + '%')}\n`;
+
+        csv += '\nProfile Information\n';
+        csv += `${csvEscape('Name')},${csvEscape(profile.name || 'N/A')}\n`;
+        csv += `${csvEscape('Age')},${csvEscape(calcAge(profile.dob) || 'N/A')}\n`;
+        csv += `${csvEscape('Weight')},${csvEscape(profile.weight ? profile.weight + ' kg' : 'N/A')}\n`;
+
+        csv += '\nLegend\n';
+        csv += `${csvEscape(REPORT_MARKS.DONE)},${csvEscape('Completed')}\n`;
+        csv += `${csvEscape(REPORT_MARKS.MISSED)},${csvEscape('Missed')}\n`;
+        csv += `${csvEscape('-')},${csvEscape('Not scheduled')}\n`;
 
         downloadFile(csv, `habitflow-${type}-report.csv`, 'text/csv');
     }
 
-    function generatePDF(type) {
+    function ensurePdfSpace(doc, currentY, requiredHeight) {
+        const pageHeight = doc.internal.pageSize.getHeight();
+        if (currentY + requiredHeight <= pageHeight - 14) {
+            return currentY;
+        }
+
+        doc.addPage();
+        return 20;
+    }
+
+    function writePdfWrappedText(doc, text, x, y, maxWidth, lineHeight) {
+        const lines = doc.splitTextToSize(text, maxWidth);
+        doc.text(lines, x, y);
+        return y + (lines.length * lineHeight);
+    }
+
+    function appendPdfCoachSection(doc, startY, periodType, coachResult, coachError) {
+        let y = ensurePdfSpace(doc, startY, 32);
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const contentWidth = pageWidth - 28;
+
+        doc.setFontSize(12);
+        doc.setTextColor(124, 92, 252);
+        doc.text(`AI Coach Insights (${periodType === 'weekly' ? 'Weekly' : 'Monthly'})`, 14, y);
+        y += 7;
+
+        doc.setFontSize(9);
+        doc.setTextColor(90);
+
+        if (coachError) {
+            y = writePdfWrappedText(doc, `AI section unavailable: ${coachError}`, 14, y, contentWidth, 4.5);
+            return y + 4;
+        }
+
+        const parsed = coachResult && coachResult.parsed ? coachResult.parsed : null;
+        if (!parsed) {
+            const fallback = coachResult && coachResult.content
+                ? coachResult.content
+                : 'AI response not available.';
+            y = writePdfWrappedText(doc, fallback, 14, y, contentWidth, 4.5);
+            return y + 4;
+        }
+
+        const analysis = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
+        const tips = normalizeStringArray(parsed.tips, 5);
+        const advice = normalizeStringArray(parsed.advice, 5);
+        const actionPlan = normalizeStringArray(parsed.action_plan || parsed.actionPlan, 6);
+        const quotes = normalizeStringArray(parsed.quotes, 3);
+
+        if (analysis) {
+            y = ensurePdfSpace(doc, y, 18);
+            doc.setFontSize(10);
+            doc.setTextColor(35);
+            doc.text('Analysis', 14, y);
+            y += 4.5;
+            doc.setFontSize(9);
+            doc.setTextColor(90);
+            y = writePdfWrappedText(doc, analysis, 14, y, contentWidth, 4.3) + 2;
+        }
+
+        const sections = [
+            { title: 'Action Plan', items: actionPlan },
+            { title: 'Tips', items: tips },
+            { title: 'Advice', items: advice },
+            { title: 'Motivation Quotes', items: quotes },
+        ];
+
+        sections.forEach(section => {
+            if (!section.items.length) return;
+
+            y = ensurePdfSpace(doc, y, 14);
+            doc.setFontSize(10);
+            doc.setTextColor(35);
+            doc.text(section.title, 14, y);
+            y += 4.3;
+
+            doc.setFontSize(9);
+            doc.setTextColor(90);
+            section.items.forEach(item => {
+                y = ensurePdfSpace(doc, y, 7);
+                y = writePdfWrappedText(doc, `- ${item}`, 14, y, contentWidth, 4.1) + 0.6;
+            });
+
+            y += 1;
+        });
+
+        return y;
+    }
+
+    async function generatePDF(type) {
         const { jsPDF } = window.jspdf;
         if (!jsPDF) {
             alert('PDF library not loaded. Please check your internet connection.');
@@ -737,8 +1668,8 @@
         }
 
         const { start, end } = getDateRange(type);
-        const rows = getReportData(start, end);
-        const doc = new jsPDF();
+        const matrix = getReportMatrixData(start, end);
+        const doc = new jsPDF({ orientation: 'landscape' });
 
         doc.setFontSize(20);
         doc.setTextColor(124, 92, 252);
@@ -758,12 +1689,8 @@
         doc.text(`Weight: ${profile.weight ? profile.weight + ' kg' : 'N/A'}`, 14, y);
         y += 12;
 
-        const totalScheduled = rows.length;
-        const totalDone = rows.filter(r => r.status === 'Completed').length;
-        const rate = totalScheduled > 0 ? Math.round((totalDone / totalScheduled) * 100) : 0;
-
         doc.setFontSize(11);
-        doc.text(`Total Scheduled: ${totalScheduled}  |  Completed: ${totalDone}  |  Completion Rate: ${rate}%`, 14, y);
+        doc.text(`Total Scheduled: ${matrix.totalScheduled}  |  Completed: ${matrix.totalDone}  |  Completion Rate: ${matrix.overallRate}%`, 14, y);
         y += 10;
 
         const moodEntries = [];
@@ -775,32 +1702,100 @@
             d.setDate(d.getDate() + 1);
         }
         if (moodEntries.length > 0) {
-            const avgMood = (moodEntries.reduce((a, b) => a + b, 0) / moodEntries.length).toFixed(1);
-            doc.text(`Average Mood: ${avgMood}/5 (${MOOD_LABELS[Math.round(avgMood)] || 'N/A'})`, 14, y);
+            const avgMoodValue = moodEntries.reduce((a, b) => a + b, 0) / moodEntries.length;
+            doc.text(`Average Mood: ${avgMoodValue.toFixed(1)}/5 (${MOOD_LABELS[Math.round(avgMoodValue)] || 'N/A'})`, 14, y);
             y += 10;
         }
 
-        if (rows.length > 0) {
+        if (matrix.rows.length > 0) {
+            const dateColumns = matrix.dates.map(shortDateLabel);
+
             doc.autoTable({
                 startY: y,
-                head: [['Date', 'Day', 'Habit', 'Status']],
-                body: rows.map(r => [r.date, r.day, r.habit, r.status]),
+                head: [['Habit', ...dateColumns, 'Done', 'Scheduled', 'Rate']],
+                body: matrix.rows.map(row => [
+                    row.habitName,
+                    ...row.marks,
+                    String(row.completed),
+                    String(row.scheduled),
+                    `${row.rate}%`,
+                ]),
                 theme: 'grid',
-                headStyles: { fillColor: [124, 92, 252] },
-                styles: { fontSize: 9 },
-                alternateRowStyles: { fillColor: [245, 245, 255] },
+                headStyles: { fillColor: [124, 92, 252], fontSize: 7 },
+                styles: { fontSize: 7, cellPadding: 2, halign: 'center', valign: 'middle' },
+                columnStyles: {
+                    0: { halign: 'left', cellWidth: 85 },
+                },
+                didParseCell: function (data) {
+                    if (data.section !== 'body') return;
+
+                    const dateStartIndex = 1;
+                    const dateEndIndex = matrix.dates.length;
+
+                    if (data.column.index >= dateStartIndex && data.column.index <= dateEndIndex) {
+                        const mark = data.cell.raw;
+
+                        if (mark === REPORT_MARKS.DONE) {
+                            data.cell.styles.fillColor = [52, 211, 153];
+                            data.cell.styles.textColor = [10, 24, 33];
+                        } else if (mark === REPORT_MARKS.MISSED) {
+                            data.cell.styles.fillColor = [248, 113, 113];
+                            data.cell.styles.textColor = [44, 12, 12];
+                        } else {
+                            data.cell.styles.textColor = [120, 120, 140];
+                        }
+                    }
+                },
             });
+
+            const finalTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : y + 8;
+            doc.setFontSize(9);
+            doc.setTextColor(110);
+            doc.text(`Legend: ${REPORT_MARKS.DONE} = Completed, ${REPORT_MARKS.MISSED} = Missed, - = Not scheduled`, 14, finalTableY);
+            y = finalTableY + 6;
         } else {
             doc.text('No habit data for this period.', 14, y);
+            y += 8;
         }
+
+        let coachResult = null;
+        let coachError = '';
+
+        if (!groqApiKey) {
+            coachError = 'Groq API key is not configured in Settings.';
+        } else {
+            try {
+                coachResult = await getCoachInsightsForPeriod(type, { stream: false, useCache: false });
+            } catch (err) {
+                coachError = err && err.message ? err.message : 'Failed to generate AI insights.';
+            }
+        }
+
+        appendPdfCoachSection(doc, y, type, coachResult, coachError);
 
         doc.save(`habitflow-${type}-report.pdf`);
     }
 
     function initReports() {
-        document.getElementById('btn-weekly-pdf').addEventListener('click', () => generatePDF('weekly'));
+        document.getElementById('btn-weekly-pdf').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+                await generatePDF('weekly');
+            } finally {
+                btn.disabled = false;
+            }
+        });
         document.getElementById('btn-weekly-csv').addEventListener('click', () => generateCSV('weekly'));
-        document.getElementById('btn-monthly-pdf').addEventListener('click', () => generatePDF('monthly'));
+        document.getElementById('btn-monthly-pdf').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+                await generatePDF('monthly');
+            } finally {
+                btn.disabled = false;
+            }
+        });
         document.getElementById('btn-monthly-csv').addEventListener('click', () => generateCSV('monthly'));
     }
 
@@ -809,6 +1804,85 @@
         document.getElementById('profile-name').value = profile.name || '';
         document.getElementById('profile-dob').value = profile.dob || '';
         document.getElementById('profile-weight').value = profile.weight || '';
+
+        const aiKeyInput = document.getElementById('settings-groq-api-key');
+        const locationInput = document.getElementById('settings-coach-location');
+
+        if (aiKeyInput) aiKeyInput.value = groqApiKey || '';
+        if (locationInput) locationInput.value = coachLocation || '';
+    }
+
+    function saveAISettings() {
+        const aiKeyInput = document.getElementById('settings-groq-api-key');
+        const locationInput = document.getElementById('settings-coach-location');
+
+        const nextKey = aiKeyInput ? aiKeyInput.value.trim() : '';
+        const nextLocation = locationInput ? locationInput.value.trim() : '';
+
+        groqApiKey = nextKey;
+        coachLocation = nextLocation;
+        coachInsightsCache = {};
+
+        if (groqApiKey) {
+            localStorage.setItem(STORAGE_KEYS.GROQ_API_KEY, groqApiKey);
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.GROQ_API_KEY);
+        }
+
+        if (coachLocation) {
+            localStorage.setItem(STORAGE_KEYS.COACH_LOCATION, coachLocation);
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.COACH_LOCATION);
+        }
+
+        setCoachStatus('AI settings saved. Dashboard coach and PDF reports will use them.', 'success');
+        alert('AI settings saved!');
+    }
+
+    function clearAllUserData() {
+        const confirmed = confirm('This will permanently clear all HabitFlow data from this browser. Continue?');
+        if (!confirmed) return;
+
+        const confirmedAgain = confirm('Please confirm again: clear all habits, completions, moods, profile, and AI settings?');
+        if (!confirmedAgain) return;
+
+        habits = [];
+        completions = {};
+        moods = {};
+        profile = { name: '', dob: '', weight: '' };
+        selectedMood = null;
+        selectedHabitDate = todayStr();
+        selectedCalendarHabitIds = [];
+        calendarFilterTouched = false;
+        groqApiKey = '';
+        coachLocation = '';
+        coachInsightsCache = {};
+
+        Object.keys(STORAGE_KEYS).forEach(keyName => {
+            localStorage.removeItem(STORAGE_KEYS[keyName]);
+        });
+
+        loadProfileForm();
+        renderHabitsList();
+        renderDashboard();
+        renderCalendar();
+        renderMoodTab();
+        document.getElementById('backup-reminder').style.display = 'none';
+        setCoachStatus('All user data has been cleared.', 'success');
+
+        const coachOutput = document.getElementById('coach-output-dashboard');
+        if (coachOutput) {
+            coachOutput.innerHTML = '<p class="empty-state">Run AI analysis to see your personalized full-history action plan.</p>';
+        }
+
+        alert('All user data cleared.');
+    }
+
+    function initDashboardCoach() {
+        const analyzeBtn = document.getElementById('btn-groq-coach-dashboard');
+        if (analyzeBtn) {
+            analyzeBtn.addEventListener('click', runDashboardCoachAnalysis);
+        }
     }
 
     function initSettings() {
@@ -819,6 +1893,9 @@
             save();
             alert('Profile saved!');
         });
+
+        document.getElementById('btn-save-ai-settings').addEventListener('click', saveAISettings);
+        document.getElementById('btn-clear-all-data').addEventListener('click', clearAllUserData);
 
         document.getElementById('btn-export-data').addEventListener('click', exportAllData);
         document.getElementById('toast-backup').addEventListener('click', () => {
@@ -905,6 +1982,7 @@
         initHabitModal();
         initCalendar();
         initDashboardDateControls();
+        initDashboardCoach();
         initMood();
         initReports();
         initSettings();

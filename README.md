@@ -1,48 +1,76 @@
 # HabitFlow
 
-HabitFlow is a modern, browser-based habit tracker built with vanilla HTML, CSS, and JavaScript.
-It helps you track daily routines, log mood, review consistency, and export progress reports.
+HabitFlow is a browser-based habit tracker built with vanilla HTML, CSS, and JavaScript.
+It helps you manage habits, track mood, review consistency in a matrix calendar, and export report-ready insights.
 
 ## Features
 
-- Dashboard with:
-  - Today list of scheduled habits
-  - Vitality score based on weighted completion over the last 7 days
+- Dashboard
+  - Habit check-off for any past date up to today
+  - Vitality score (weighted from the last 7 days)
   - Best streak display
   - Today mood summary
-- Habit management:
+  - AI Coach panel with streaming output
+    - Uses full historical data (time-agnostic)
+    - Uses configured location and live weather context when available
+
+- Habit management
   - Add, edit, and delete habits
-  - Daily or custom-day schedules
-  - Custom color per habit
-  - Start date support
-- Calendar tracking:
-  - Month view per selected habit
-  - Completed, missed, future, and not-started states
-- Mood tracker:
-  - 1 to 5 mood scale with notes
-  - Monthly mood history view
-- Reports:
-  - Weekly and monthly CSV export
-  - Weekly and monthly PDF export
-  - Completion stats and average mood summary in PDF
-- Settings and backup:
-  - Profile fields (name, date of birth, weight)
-  - Full data export/import as JSON
-  - Daily in-app backup reminder
+  - Frequency: daily or custom weekdays
+  - Start date and color per habit
+
+- Calendar matrix
+  - Monthly matrix view
+  - Rows: habits, Columns: dates
+  - Tick/Cross style status (completed/missed), plus unscheduled/future states
+  - Multi-habit filter using selectable chips (choose any subset)
+
+- Mood tracking
+  - 1 to 5 mood scale with optional note
+  - Monthly mood history calendar
+
+- Reports
+  - Weekly and monthly CSV exports
+  - Weekly and monthly PDF exports
+  - Matrix report format in exports
+  - PDF includes AI Coach insights for the selected report period
+    - Weekly PDF -> weekly AI insights
+    - Monthly PDF -> monthly AI insights
+
+- Settings
+  - Profile (name, DOB, weight)
+  - AI Coach configuration
+    - Groq API key
+    - Optional location for weather-aware action plans
+  - Export/import full app backup JSON
+  - Clear all user data (danger zone)
+
+## AI Integration
+
+- Provider endpoint: Groq OpenAI-compatible API
+- Model: `openai/gpt-oss-120b`
+- Dashboard AI:
+  - Full-history coaching (not restricted to weekly/monthly)
+  - Streaming response rendering in UI
+- PDF AI:
+  - Period-specific coaching added automatically during PDF generation
+- Weather context:
+  - Geocoding: Open-Meteo geocoding API
+  - Weather: Open-Meteo forecast API
 
 ## Privacy and Storage
 
-All data is stored locally in your browser using `localStorage`.
-No backend or cloud database is used by default.
-
-If browser storage is cleared, your data will be removed unless you created a backup JSON file.
+- Data is stored in browser localStorage.
+- No backend database is required for core app usage.
+- Groq API key and AI location settings are stored locally in the same browser.
+- AI requests send your app data to Groq when you run AI analysis or generate PDF with AI insights.
 
 ## Tech Stack
 
 - HTML5
 - CSS3
 - Vanilla JavaScript (ES6+)
-- External libraries loaded from CDN:
+- CDN dependencies
   - Lucide icons
   - jsPDF
   - jsPDF-AutoTable
@@ -55,6 +83,7 @@ HabitFlow/
 |- index.html
 |- style.css
 |- app.js
+|- README.md
 ```
 
 ## Getting Started
@@ -62,11 +91,9 @@ HabitFlow/
 No build step is required.
 
 1. Clone or download this project.
-2. Open `index.html` directly in a browser, or serve the folder with a local server.
+2. Open `index.html` directly in your browser, or run a local static server.
 
-Example local server options:
-
-- Python:
+Example (Python):
 
 ```bash
 python -m http.server 5500
@@ -74,16 +101,18 @@ python -m http.server 5500
 
 Then open `http://localhost:5500`.
 
-## How to Use
+## Typical Workflow
 
-1. Open the **Habits** tab and create at least one habit.
-2. Mark today habits complete from the **Dashboard**.
-3. Log your mood in the **Mood** tab.
-4. Review progress in **Calendar** and **Reports**.
-5. Export backup data regularly in **Settings**.
+1. Create habits in the Habits tab.
+2. Check off habits from Dashboard.
+3. Log mood daily.
+4. Review matrix in Calendar.
+5. Set AI key/location in Settings.
+6. Use Dashboard AI Coach for full-history guidance.
+7. Generate weekly/monthly PDF for period-specific AI insights.
 
 ## Notes
 
-- PDF generation requires internet access to load CDN scripts.
-- The app is fully client-side and can run as a static site.
-- Importing backup data replaces current local data after confirmation.
+- Internet access is required for CDN libraries, AI requests, and weather context.
+- Importing backup data replaces current app data after confirmation.
+- Clear all user data permanently removes local HabitFlow data from this browser.

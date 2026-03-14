@@ -123,6 +123,23 @@
                         <p class="empty-state">No habits scheduled for this date.</p>
                     </div>
                 </div>
+                <div class="card ai-coach-card dashboard-coach-card glass">
+                    <div class="card-header-row">
+                        <i data-lucide="sparkles" class="card-icon"></i>
+                        <h2>AI Coach (Dashboard)</h2>
+                    </div>
+                    <p class="card-desc">Get a full-history action plan using all tracked habits, completions, moods, and configured location/weather context.</p>
+                    <div class="report-actions">
+                        <button class="btn btn-primary" id="btn-groq-coach-dashboard" type="button">
+                            <i data-lucide="sparkles"></i> <span>Analyze Full History</span>
+                        </button>
+                    </div>
+                    <p class="coach-privacy-note">Configure Groq API key and location from Settings. This sends your full tracked data + today context to Groq.</p>
+                    <p class="coach-status" id="coach-status-dashboard"></p>
+                    <div class="coach-output" id="coach-output-dashboard">
+                        <p class="empty-state">Run AI analysis to see your personalized full-history action plan.</p>
+                    </div>
+                </div>
             </section>
 
             <!-- Habits Tab -->
@@ -147,12 +164,22 @@
                 <div class="tab-header">
                     <div class="page-header">
                         <h1>Calendar</h1>
-                        <p class="page-subtitle">Track your progress over time and click past days to adjust check-offs</p>
+                        <p class="page-subtitle">Track all active habits in one monthly matrix and click past days to adjust check-offs</p>
                     </div>
                     <div class="calendar-controls">
-                        <select id="calendar-habit-select" class="select-input">
-                            <option value="">-- Select Habit --</option>
-                        </select>
+                        <div class="calendar-filter-box glass">
+                            <div class="calendar-filter-header">
+                                <span class="calendar-filter-title">Display Habits</span>
+                                <span class="calendar-filter-summary" id="calendar-filter-summary">0 selected</span>
+                            </div>
+                            <div class="calendar-filter-actions">
+                                <button class="btn btn-ghost btn-sm" id="calendar-filter-select-all" type="button">Select all</button>
+                                <button class="btn btn-ghost btn-sm" id="calendar-filter-clear" type="button">Clear</button>
+                            </div>
+                            <div class="calendar-habit-filter-list" id="calendar-habit-filter-list">
+                                <p class="calendar-filter-empty">No active habits in this month</p>
+                            </div>
+                        </div>
                         <div class="month-nav">
                             <button class="btn btn-icon" id="cal-prev"><i data-lucide="chevron-left"></i></button>
                             <span id="cal-month-label">March 2026</span>
@@ -161,7 +188,7 @@
                     </div>
                 </div>
                 <div id="calendar-grid" class="calendar-grid glass">
-                    <p class="empty-state">Select a habit to view its calendar</p>
+                    <p class="empty-state">No active habits in this month yet</p>
                 </div>
             </section>
 
@@ -286,6 +313,25 @@
                     </div>
                     <div class="card glass">
                         <div class="card-header-row">
+                            <i data-lucide="sparkles" class="card-icon"></i>
+                            <h2>AI Coach Configuration</h2>
+                        </div>
+                        <p class="card-desc">These settings are used by Dashboard AI Coach and automatically included when generating weekly/monthly PDF reports.</p>
+                        <div class="form-group">
+                            <label for="settings-groq-api-key">Groq API Key</label>
+                            <input type="password" id="settings-groq-api-key" class="text-input" placeholder="gsk_..." autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="settings-coach-location">Location (optional)</label>
+                            <input type="text" id="settings-coach-location" class="text-input" placeholder="City or area for weather-aware action plans" maxlength="140">
+                        </div>
+                        <button class="btn btn-primary" id="btn-save-ai-settings" type="button">
+                            <i data-lucide="save"></i>
+                            <span>Save AI Settings</span>
+                        </button>
+                    </div>
+                    <div class="card glass">
+                        <div class="card-header-row">
                             <i data-lucide="hard-drive-download" class="card-icon"></i>
                             <h2>Data Backup</h2>
                         </div>
@@ -300,6 +346,13 @@
                                 <span>Import Data</span>
                                 <input type="file" id="import-file" accept=".json" hidden>
                             </label>
+                        </div>
+                        <div class="danger-zone">
+                            <p class="danger-note">Danger zone: this permanently removes all local HabitFlow data from this browser.</p>
+                            <button class="btn btn-danger" id="btn-clear-all-data" type="button">
+                                <i data-lucide="trash-2"></i>
+                                <span>Clear All User Data</span>
+                            </button>
                         </div>
                     </div>
                 </div>
