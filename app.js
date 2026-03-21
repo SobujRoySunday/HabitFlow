@@ -24,6 +24,7 @@
     const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
     const GROQ_MODEL = 'openai/gpt-oss-120b';
     const REPORT_MARKS = { DONE: '✓', MISSED: '✗', UNSCHEDULED: '-' };
+    const MAX_LOG_TAGS = 12;
 
     let authToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) || '';
     let currentUser = null;
@@ -122,7 +123,8 @@
     }
 
     function csvEscape(value) {
-        return `"${String(value).replace(/"/g, '""')}"`;
+        const safeValue = value == null ? '' : String(value);
+        return `"${safeValue.replace(/"/g, '""')}"`;
     }
 
     function getDateStringsInRange(startDateStr, endDateStr) {
@@ -224,7 +226,7 @@
 
     async function runAuthSubmit() {
         const username = (document.getElementById('auth-username').value || '').trim();
-        const password = document.getElementById('auth-password').value || '';
+        const password = (document.getElementById('auth-password').value || '').trim();
         if (username.length < 3 || password.length < 6) {
             setAuthStatus('Username must be 3+ chars and password 6+ chars.', true);
             return;
@@ -254,6 +256,7 @@
             currentUser = me.user;
             return true;
         } catch (_err) {
+            console.warn('Session validation failed, clearing local token.');
             setAuthState('', null);
             return false;
         }
@@ -370,7 +373,9 @@
     }
 
     function normalizeTagsInput(value) {
-        return Array.from(new Set((value || '').split(',').map(v => v.trim()).filter(Boolean))).slice(0, 12);
+        // Keep in sync with server normalizeTags rules.
+        const uniqueTags = Array.from(new Set((value || '').split(',').map(v => v.trim()).filter(Boolean)));
+        return uniqueTags.slice(0, MAX_LOG_TAGS);
     }
 
     async function saveHabitLogEntry(habit, payload) {
@@ -1155,7 +1160,15 @@
 
     function normalizeStringArray(value, maxItems) {
         if (!Array.isArray(value)) return [];
-        return value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()).slice(0, maxItems);
+        const output = [];
+        for (const item of value) {
+            if (typeof item !== 'string') continue;
+            const trimmed = item.trim();
+            if (!trimmed) continue;
+            output.push(trimmed);
+            if (output.length >= maxItems) break;
+        }
+        return output;
     }
 
     function parseCoachJsonResponse(content) {
@@ -1464,6 +1477,11 @@
             e.target.value = '';
             alert('Import is disabled in server mode to avoid cross-user data overwrite.');
         });
+
+        const clearAllBtn = document.getElementById('btn-clear-all-data');
+        if (clearAllBtn) clearAllBtn.style.display = 'none';
+        const importLabel = document.querySelector('label.file-label[for=\"import-file\"]');
+        if (importLabel) importLabel.style.display = 'none';
     }
 
     function initDashboardCoach() {
@@ -1538,11 +1556,10 @@
             try {
                 await loadBootstrapData();
             } catch (err) {
-                setCoachStatus(err.message || 'Failed to load user data.', 'error');
+                setAuthStatus(err.message || 'Failed to load user data.', true);
             }
         }
         renderAll();
-        renderAuthShell();
     }
 
     if (document.readyState === 'loading') {

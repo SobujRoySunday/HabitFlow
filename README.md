@@ -1,6 +1,6 @@
 # HabitFlow
 
-HabitFlow is a browser-based habit tracker built with vanilla HTML, CSS, and JavaScript.
+HabitFlow is a habit tracker with a vanilla HTML/CSS/JavaScript frontend and a Node.js + MongoDB backend.
 It helps you manage habits, track mood, review consistency in a matrix calendar, and export report-ready insights.
 
 ## Features
@@ -60,9 +60,8 @@ It helps you manage habits, track mood, review consistency in a matrix calendar,
 
 ## Privacy and Storage
 
-- Data is stored in browser localStorage.
-- No backend database is required for core app usage.
-- Groq API key and AI location settings are stored locally in the same browser.
+- Data is stored per user in MongoDB.
+- Groq API key and AI location settings are stored per user in MongoDB.
 - AI requests send your app data to Groq when you run AI analysis or generate PDF with AI insights.
 
 ## Tech Stack
@@ -70,6 +69,9 @@ It helps you manage habits, track mood, review consistency in a matrix calendar,
 - HTML5
 - CSS3
 - Vanilla JavaScript (ES6+)
+- Node.js + Express
+- MongoDB + Mongoose
+- JWT authentication
 - CDN dependencies
   - Lucide icons
   - jsPDF
@@ -83,23 +85,26 @@ HabitFlow/
 |- index.html
 |- style.css
 |- app.js
+|- server.js
+|- package.json
+|- .env.example
 |- README.md
 ```
 
 ## Getting Started
 
-No build step is required.
-
-1. Clone or download this project.
-2. Open `index.html` directly in your browser, or run a local static server.
-
-Example (Python):
+1. Clone this project.
+2. Install dependencies.
+3. Copy `.env.example` to `.env` and set your values.
+4. Start the server.
 
 ```bash
-python -m http.server 5500
+npm install
+cp .env.example .env
+npm start
 ```
 
-Then open `http://localhost:5500`.
+Then open `http://localhost:3000`.
 
 ## Typical Workflow
 

@@ -5,14 +5,51 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number.parseInt(process.env.PORT || '', 10) || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/habitflow';
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+const MAX_LOG_TAGS = 12;
+
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  console.error('Server startup failed: JWT_SECRET must be set and at least 32 characters.');
+  process.exit(1);
+}
+const jwtSecretUniqueChars = new Set(JWT_SECRET).size;
+if (jwtSecretUniqueChars < 10) {
+  console.error('Server startup failed: JWT_SECRET appears weak. Use a high-entropy secret.');
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+app.disable('x-powered-by');
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many authentication attempts. Please try again later.' },
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests. Please slow down.' },
+});
+const assetLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api', apiLimiter);
 
 const { Schema } = mongoose;
 
@@ -121,14 +158,15 @@ async function auth(req, res, next) {
 
 function normalizeTags(tags) {
   if (!Array.isArray(tags)) return [];
-  return [...new Set(tags.map(t => String(t || '').trim()).filter(Boolean).slice(0, 12))];
+  const uniqueTags = [...new Set(tags.map(t => String(t || '').trim()).filter(Boolean))];
+  return uniqueTags.slice(0, MAX_LOG_TAGS);
 }
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
   if (username.length < 3 || password.length < 6) {
-    return res.status(400).json({ message: 'Username must be at least 3 and password at least 6 characters.' });
+    return res.status(400).json({ message: 'Username must be at least 3 characters and password at least 6 characters.' });
   }
   const existing = await User.findOne({ username }).lean();
   if (existing) return res.status(409).json({ message: 'Username already exists.' });
@@ -139,7 +177,7 @@ app.post('/api/auth/register', async (req, res) => {
   return res.status(201).json({ token, user: { id: String(user._id), username: user.username } });
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
   const user = await User.findOne({ username });
@@ -297,8 +335,15 @@ app.get('/api/ai-suggestions', auth, async (req, res) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-app.use(express.static(__dirname));
-app.get('*', (_req, res) => {
+app.get('/assets/style.css', assetLimiter, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'style.css'));
+});
+
+app.get('/assets/app.js', assetLimiter, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'app.js'));
+});
+
+app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
