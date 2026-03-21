@@ -13,13 +13,11 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const MAX_LOG_TAGS = 12;
 
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  console.error('Server startup failed: JWT_SECRET must be set and at least 32 characters.');
-  process.exit(1);
+  throw new Error('Server startup failed: JWT_SECRET must be set and at least 32 characters.');
 }
 const jwtSecretUniqueChars = new Set(JWT_SECRET).size;
 if (jwtSecretUniqueChars < 10) {
-  console.error('Server startup failed: JWT_SECRET appears weak. Use a high-entropy secret.');
-  process.exit(1);
+  throw new Error('Server startup failed: JWT_SECRET appears weak. Use a high-entropy secret.');
 }
 
 const app = express();
@@ -354,7 +352,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await ensureMongoConnected();
     console.log('MongoDB connected');
   } catch (err) {
     console.error('Failed to connect to MongoDB:', err.message);
@@ -366,4 +364,19 @@ async function start() {
   });
 }
 
-start();
+let mongoConnectPromise = null;
+async function ensureMongoConnected() {
+  if (mongoose.connection.readyState === 1) return;
+  if (!mongoConnectPromise) {
+    mongoConnectPromise = mongoose.connect(MONGODB_URI).finally(() => {
+      mongoConnectPromise = null;
+    });
+  }
+  await mongoConnectPromise;
+}
+
+if (require.main === module) {
+  start();
+}
+
+module.exports = { app, ensureMongoConnected, start };

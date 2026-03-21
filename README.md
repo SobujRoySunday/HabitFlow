@@ -106,6 +106,27 @@ npm start
 
 Then open `http://localhost:3000`.
 
+## Deploy on Netlify or Vercel (single deployment)
+
+HabitFlow now supports serverless deployment where frontend + API are deployed together on one platform.
+
+- **Vercel**: Uses `api/index.js` as a serverless function and `vercel.json` for routing.
+- **Netlify**: Uses `netlify/functions/server.js` and `netlify.toml` redirects.
+
+### Required environment variables
+
+Set these in your hosting provider project settings:
+
+- `MONGODB_URI` (MongoDB Atlas connection string recommended)
+- `JWT_SECRET` (high-entropy secret, at least 32 characters)
+- `PORT` is optional for local development only
+
+### Notes
+
+- You still need a MongoDB database (for example MongoDB Atlas).
+- Static files (`index.html`, `app.js`, `style.css`) are served by the platform.
+- API routes continue to work under `/api/*`.
+
 ## Typical Workflow
 
 1. Create habits in the Habits tab.
