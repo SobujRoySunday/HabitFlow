@@ -1,6 +1,6 @@
 # HabitFlow
 
-HabitFlow is a browser-based habit tracker built with vanilla HTML, CSS, and JavaScript.
+HabitFlow is a habit tracker with a vanilla HTML/CSS/JavaScript frontend and a Node.js + MongoDB backend.
 It helps you manage habits, track mood, review consistency in a matrix calendar, and export report-ready insights.
 
 ## Features
@@ -60,9 +60,8 @@ It helps you manage habits, track mood, review consistency in a matrix calendar,
 
 ## Privacy and Storage
 
-- Data is stored in browser localStorage.
-- No backend database is required for core app usage.
-- Groq API key and AI location settings are stored locally in the same browser.
+- Data is stored per user in MongoDB.
+- Groq API key and AI location settings are stored per user in MongoDB.
 - AI requests send your app data to Groq when you run AI analysis or generate PDF with AI insights.
 
 ## Tech Stack
@@ -70,6 +69,9 @@ It helps you manage habits, track mood, review consistency in a matrix calendar,
 - HTML5
 - CSS3
 - Vanilla JavaScript (ES6+)
+- Node.js + Express
+- MongoDB + Mongoose
+- JWT authentication
 - CDN dependencies
   - Lucide icons
   - jsPDF
@@ -83,23 +85,47 @@ HabitFlow/
 |- index.html
 |- style.css
 |- app.js
+|- server.js
+|- package.json
+|- .env.example
 |- README.md
 ```
 
 ## Getting Started
 
-No build step is required.
-
-1. Clone or download this project.
-2. Open `index.html` directly in your browser, or run a local static server.
-
-Example (Python):
+1. Clone this project.
+2. Install dependencies.
+3. Copy `.env.example` to `.env` and set your values.
+4. Start the server.
 
 ```bash
-python -m http.server 5500
+npm install
+cp .env.example .env
+npm start
 ```
 
-Then open `http://localhost:5500`.
+Then open `http://localhost:3000`.
+
+## Deploy on Netlify or Vercel (single deployment)
+
+HabitFlow now supports serverless deployment where frontend + API are deployed together on one platform.
+
+- **Vercel**: Uses `api/index.js` as a serverless function and `vercel.json` for routing.
+- **Netlify**: Uses `netlify/functions/server.js` and `netlify.toml` redirects.
+
+### Required environment variables
+
+Set these in your hosting provider project settings:
+
+- `MONGODB_URI` (MongoDB Atlas connection string recommended)
+- `JWT_SECRET` (high-entropy secret, at least 32 characters, e.g. `openssl rand -base64 32`)
+- `PORT` is optional for local development only
+
+### Notes
+
+- You still need a MongoDB database (for example MongoDB Atlas).
+- Static files (`index.html`, `app.js`, `style.css`) are served by the platform.
+- API routes continue to work under `/api/*`.
 
 ## Typical Workflow
 

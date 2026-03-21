@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HabitFlow</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/assets/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,6 +13,26 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
+    <div id="auth-shell" class="auth-shell">
+        <div class="auth-card glass">
+            <h1>HabitFlow</h1>
+            <p class="page-subtitle">Sign in to access your private habits and settings</p>
+            <div class="auth-tabs">
+                <button id="auth-tab-login" class="btn btn-primary" type="button">Login</button>
+                <button id="auth-tab-register" class="btn btn-secondary" type="button">Register</button>
+            </div>
+            <div class="form-group">
+                <label for="auth-username">Username</label>
+                <input id="auth-username" class="text-input" type="text" maxlength="60" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="auth-password">Password</label>
+                <input id="auth-password" class="text-input" type="password" maxlength="120" autocomplete="current-password">
+            </div>
+            <button id="btn-auth-submit" class="btn btn-primary" type="button">Login</button>
+            <p id="auth-status" class="page-subtitle"></p>
+        </div>
+    </div>
     <div id="app">
         <!-- Sidebar Navigation -->
         <nav id="sidebar">
@@ -62,6 +82,8 @@
             </ul>
             <div class="sidebar-footer">
                 <div class="sidebar-divider"></div>
+                <p id="sidebar-user" class="sidebar-credit"></p>
+                <button class="btn btn-ghost btn-sm" id="btn-logout" type="button">Logout</button>
                 <p class="sidebar-credit">Built with focus</p>
             </div>
         </nav>
@@ -123,6 +145,15 @@
                         <p class="empty-state">No habits scheduled for this date.</p>
                     </div>
                 </div>
+                <div class="card glass">
+                    <div class="card-header-row">
+                        <i data-lucide="list-todo" class="card-icon"></i>
+                        <h2>Implementation Intentions</h2>
+                    </div>
+                    <div id="implementation-intentions" class="today-habits-list">
+                        <p class="empty-state">Add preferred time/location in habits to generate intentions.</p>
+                    </div>
+                </div>
                 <div class="card ai-coach-card dashboard-coach-card glass">
                     <div class="card-header-row">
                         <i data-lucide="sparkles" class="card-icon"></i>
@@ -138,6 +169,9 @@
                     <p class="coach-status" id="coach-status-dashboard"></p>
                     <div class="coach-output" id="coach-output-dashboard">
                         <p class="empty-state">Run AI analysis to see your personalized full-history action plan.</p>
+                    </div>
+                    <div class="coach-output" id="coach-output-history">
+                        <p class="empty-state">Past AI suggestions will appear here.</p>
                     </div>
                 </div>
             </section>
@@ -199,7 +233,11 @@
                     <p class="page-subtitle">Log how you're feeling each day</p>
                 </div>
                 <div class="card mood-input-card glass">
-                    <h2>How are you feeling today?</h2>
+                    <h2>Log Mood</h2>
+                    <div class="form-group">
+                        <label for="mood-date">Date</label>
+                        <input type="date" id="mood-date" class="text-input">
+                    </div>
                     <div class="mood-options" id="mood-options">
                         <button class="mood-btn" data-mood="5" title="Amazing">
                             <i data-lucide="laugh"></i>
@@ -239,6 +277,7 @@
                         <button class="btn btn-icon" id="mood-next"><i data-lucide="chevron-right"></i></button>
                     </div>
                     <div id="mood-history" class="mood-history"></div>
+                    <div id="mood-graph" class="mood-graph"></div>
                 </div>
             </section>
 
@@ -373,6 +412,10 @@
                     <input type="text" id="habit-name" class="text-input" placeholder="e.g. Drink 8 glasses of water" maxlength="100">
                 </div>
                 <div class="form-group">
+                    <label for="habit-description">Description (optional)</label>
+                    <input type="text" id="habit-description" class="text-input" placeholder="Short note" maxlength="220">
+                </div>
+                <div class="form-group">
                     <label for="habit-start">Start Date</label>
                     <input type="date" id="habit-start" class="text-input">
                 </div>
@@ -398,6 +441,29 @@
                 <div class="form-group">
                     <label for="habit-color">Color</label>
                     <input type="color" id="habit-color" class="color-input" value="#7c5cfc">
+                </div>
+                <div class="form-group">
+                    <label for="habit-tracking-mode">Tracking Mode</label>
+                    <select id="habit-tracking-mode" class="select-input">
+                        <option value="boolean">Done / Not done</option>
+                        <option value="numeric">Quantitative</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="habit-unit">Unit (optional)</label>
+                    <input type="text" id="habit-unit" class="text-input" placeholder="reps, liters, minutes..." maxlength="30">
+                </div>
+                <div class="form-group">
+                    <label for="habit-target">Target Value (optional)</label>
+                    <input type="number" id="habit-target" class="text-input" min="0" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="habit-preferred-time">Preferred Time (optional)</label>
+                    <input type="time" id="habit-preferred-time" class="text-input">
+                </div>
+                <div class="form-group">
+                    <label for="habit-preferred-location">Preferred Location (optional)</label>
+                    <input type="text" id="habit-preferred-location" class="text-input" placeholder="Gym, library..." maxlength="120">
                 </div>
             </div>
             <div class="modal-footer">
@@ -425,6 +491,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="/assets/app.js"></script>
 </body>
 </html>
