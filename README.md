@@ -118,7 +118,7 @@ HabitFlow now supports serverless deployment where frontend + API are deployed t
 Set these in your hosting provider project settings:
 
 - `MONGODB_URI` (MongoDB Atlas connection string recommended)
-- `JWT_SECRET` (high-entropy secret, at least 32 characters)
+- `JWT_SECRET` (high-entropy secret, at least 32 characters, e.g. `openssl rand -base64 32`)
 - `PORT` is optional for local development only
 
 ### Notes

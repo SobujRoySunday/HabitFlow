@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
-const PORT = Number.parseInt(process.env.PORT || '', 10) || 3000;
+const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/habitflow';
 const JWT_SECRET = process.env.JWT_SECRET;
 const MAX_LOG_TAGS = 12;
